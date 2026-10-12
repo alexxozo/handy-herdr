@@ -63,6 +63,14 @@ export HANDY_HERDR_KIND=cursor      # preferred agent kind for auto
 export HANDY_HERDR_MODE=native      # force mode for this shell
 ```
 
+## Tests
+
+No live Handy/Herdr required — `herdr` / `pbcopy` / `osascript` are mocked:
+
+```bash
+./tests/run.sh
+```
+
 ## Uninstall
 
 ```bash

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${MOCK_CALLS:?}"
+printf 'osascript\n' >>"$MOCK_CALLS"
+# consume stdin AppleScript
+cat >/dev/null
+exit 0

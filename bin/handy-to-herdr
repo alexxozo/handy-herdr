@@ -29,9 +29,12 @@ fi
 
 native_paste() {
   log "native paste"
-  # Copy text, activate paste into frontmost app (normal Handy behavior)
-  printf '%s' "$TEXT" | /usr/bin/pbcopy
-  /usr/bin/osascript <<'APPLESCRIPT'
+  # Copy text, activate paste into frontmost app (normal Handy behavior).
+  # Bins are overridable for tests (PBCOPY_BIN / OSASCRIPT_BIN).
+  local pbcopy_bin="${PBCOPY_BIN:-/usr/bin/pbcopy}"
+  local osascript_bin="${OSASCRIPT_BIN:-/usr/bin/osascript}"
+  printf '%s' "$TEXT" | "$pbcopy_bin"
+  "$osascript_bin" <<'APPLESCRIPT'
 tell application "System Events"
   keystroke "v" using command down
 end tell

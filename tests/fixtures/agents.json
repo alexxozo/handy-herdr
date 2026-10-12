@@ -1,0 +1,29 @@
+{
+  "id": "cli:agent:list",
+  "result": {
+    "agents": [
+      {
+        "agent": "claude",
+        "agent_status": "idle",
+        "focused": false,
+        "pane_id": "w1:p1",
+        "terminal_title_stripped": "Claude idle"
+      },
+      {
+        "agent": "cursor",
+        "agent_status": "idle",
+        "focused": false,
+        "pane_id": "w1:p2",
+        "terminal_title_stripped": "Cursor idle"
+      },
+      {
+        "agent": "cursor",
+        "agent_status": "working",
+        "focused": true,
+        "pane_id": "w1:p3",
+        "terminal_title_stripped": "Cursor working"
+      }
+    ],
+    "type": "agent_list"
+  }
+}

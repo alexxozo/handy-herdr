@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fake herdr for tests. Records argv lines to $MOCK_CALLS.
+set -euo pipefail
+
+: "${MOCK_CALLS:?MOCK_CALLS must be set}"
+: "${MOCK_HERDR_DIR:?MOCK_HERDR_DIR must be set}"
+
+printf '%s\n' "$*" >>"$MOCK_CALLS"
+
+cmd="${1-}"
+sub="${2-}"
+
+if [[ "$cmd" == "agent" && "$sub" == "list" ]]; then
+  if [[ "${MOCK_HERDR_LIST_FAIL:-}" == "1" ]]; then
+    echo "mock herdr: list failed" >&2
+    exit 1
+  fi
+  cat "${MOCK_HERDR_DIR}/agents.json"
+  exit 0
+fi
+
+if [[ "$cmd" == "agent" && "$sub" == "focus" ]]; then
+  if [[ "${MOCK_HERDR_FOCUS_FAIL:-}" == "1" ]]; then
+    echo "mock herdr: focus failed" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+if [[ "$cmd" == "agent" && "$sub" == "prompt" ]]; then
+  if [[ "${MOCK_HERDR_PROMPT_FAIL:-}" == "1" ]]; then
+    echo "mock herdr: prompt failed" >&2
+    exit 1
+  fi
+  # record prompt text separately for assertions
+  printf '%s\n' "${4-}" >>"${MOCK_HERDR_DIR}/prompts.txt"
+  exit 0
+fi
+
+echo "mock herdr: unhandled: $*" >&2
+exit 1
