@@ -1,0 +1,135 @@
+#!/bin/bash
+# Handy external paste → Herdr agent pane, or native paste when routing is off.
+# Handy launches this with a minimal GUI PATH, so we hardcode locations.
+set -euo pipefail
+
+TEXT="${1-}"
+[[ -n "$TEXT" ]] || exit 0
+
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+LOG="${HANDY_HERDR_LOG:-$HOME/.cache/handy-to-herdr.log}"
+mkdir -p "$(dirname "$LOG")"
+log() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$LOG"; }
+
+log "start text_len=${#TEXT}"
+
+KIND="${HANDY_HERDR_KIND:-cursor}"
+TARGET_FILE="${HANDY_HERDR_TARGET_FILE:-$HOME/.config/herdr/handy-target}"
+MODE_FILE="${HANDY_HERDR_MODE_FILE:-$HOME/.config/herdr/handy-mode}"
+
+# Modes: herdr (default) | native
+mode="herdr"
+if [[ -n "${HANDY_HERDR_MODE:-}" ]]; then
+  mode="$HANDY_HERDR_MODE"
+elif [[ -f "$MODE_FILE" ]]; then
+  mode="$(tr -d ' \n\t' <"$MODE_FILE" || true)"
+fi
+[[ -n "$mode" ]] || mode="herdr"
+
+native_paste() {
+  log "native paste"
+  # Copy text, activate paste into frontmost app (normal Handy behavior)
+  printf '%s' "$TEXT" | /usr/bin/pbcopy
+  /usr/bin/osascript <<'APPLESCRIPT'
+tell application "System Events"
+  keystroke "v" using command down
+end tell
+APPLESCRIPT
+  log "ok native"
+}
+
+if [[ "$mode" == "native" || "$mode" == "off" ]]; then
+  native_paste
+  exit 0
+fi
+
+resolve_herdr() {
+  if [[ -n "${HERDR_BIN:-}" && -x "${HERDR_BIN}" ]]; then
+    printf '%s\n' "$HERDR_BIN"
+    return
+  fi
+  local c
+  for c in "$HOME/.local/bin/herdr" /opt/homebrew/bin/herdr /usr/local/bin/herdr; do
+    if [[ -x "$c" ]]; then
+      printf '%s\n' "$c"
+      return
+    fi
+  done
+  c="$(command -v herdr 2>/dev/null || true)"
+  if [[ -n "$c" && -x "$c" ]]; then
+    printf '%s\n' "$c"
+    return
+  fi
+  return 1
+}
+
+HERDR_BIN="$(resolve_herdr)" || {
+  log "herdr missing → native fallback"
+  native_paste
+  exit 0
+}
+
+# If Herdr server isn't up, don't eat the transcript
+if ! "$HERDR_BIN" agent list >/dev/null 2>>"$LOG"; then
+  log "herdr unreachable → native fallback"
+  native_paste
+  exit 0
+fi
+
+pick_target() {
+  if [[ -n "${HANDY_HERDR_TARGET:-}" ]]; then
+    printf '%s\n' "$HANDY_HERDR_TARGET"
+    return
+  fi
+  if [[ -f "$TARGET_FILE" ]]; then
+    local pinned
+    pinned="$(tr -d ' \n\t' <"$TARGET_FILE" || true)"
+    if [[ -n "$pinned" ]]; then
+      printf '%s\n' "$pinned"
+      return
+    fi
+  fi
+
+  KIND="$KIND" "$HERDR_BIN" agent list | /usr/bin/python3 -c '
+import json, os, sys
+kind = os.environ.get("KIND", "cursor")
+data = json.load(sys.stdin)
+agents = data.get("result", {}).get("agents") or data.get("agents") or []
+if not agents:
+    sys.exit("no herdr agents running")
+
+def score(a):
+    s = 0
+    if a.get("agent") == kind: s += 100
+    if a.get("agent_status") == "working": s += 50
+    if a.get("focused"): s += 20
+    return s
+
+preferred = [a for a in agents if a.get("agent") == kind] or list(agents)
+preferred.sort(key=score, reverse=True)
+target = preferred[0].get("pane_id")
+if not target:
+    sys.exit("could not resolve pane id")
+print(target)
+'
+}
+
+TARGET="$(pick_target)" || {
+  log "no agent target → native fallback"
+  native_paste
+  exit 0
+}
+log "target=$TARGET herdr=$HERDR_BIN mode=$mode"
+
+"$HERDR_BIN" agent focus "$TARGET" >/dev/null 2>>"$LOG" || {
+  log "error: focus failed → native fallback"
+  native_paste
+  exit 0
+}
+"$HERDR_BIN" agent prompt "$TARGET" "$TEXT" >/dev/null 2>>"$LOG" || {
+  log "error: prompt failed → native fallback"
+  native_paste
+  exit 0
+}
+log "ok"

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Choose Handy routing: Herdr pane pin, auto Herdr, or native (any focused app).
+set -euo pipefail
+
+TARGET_FILE="${HANDY_HERDR_TARGET_FILE:-$HOME/.config/herdr/handy-target}"
+MODE_FILE="${HANDY_HERDR_MODE_FILE:-$HOME/.config/herdr/handy-mode}"
+HERDR_BIN="${HERDR_BIN:-$(command -v herdr || true)}"
+[[ -x "${HERDR_BIN:-}" ]] || HERDR_BIN="$HOME/.local/bin/herdr"
+
+command -v fzf >/dev/null || { echo "fzf is required (brew install fzf)" >&2; exit 1; }
+
+mkdir -p "$(dirname "$TARGET_FILE")" "$(dirname "$MODE_FILE")"
+
+current_mode="herdr"
+[[ -f "$MODE_FILE" ]] && current_mode="$(tr -d ' \n\t' <"$MODE_FILE" || true)"
+[[ -n "$current_mode" ]] || current_mode="herdr"
+
+current_pin=""
+[[ -f "$TARGET_FILE" ]] && current_pin="$(tr -d ' \n\t' <"$TARGET_FILE" || true)"
+
+mode_choice="$(
+  printf '%s\n' \
+    "herdr-auto	Route FN → Herdr (auto-pick cursor agent)" \
+    "herdr-pin	Route FN → pick a Herdr agent pane" \
+    "native	Normal Handy: paste into whatever is focused" \
+    | fzf --prompt='Handy mode > ' --height=30% --reverse --border \
+        --header="current mode: ${current_mode} · pin: ${current_pin:-none}" \
+        --with-nth=2.. -d$'\t'
+)" || true
+
+[[ -n "${mode_choice:-}" ]] || { echo "cancelled"; exit 1; }
+mode_key="$(printf '%s\n' "$mode_choice" | awk -F'\t' '{print $1}')"
+
+case "$mode_key" in
+  native)
+    printf 'native\n' >"$MODE_FILE"
+    echo "Handy mode: native (FN pastes into focused app/field)"
+    ;;
+  herdr-auto)
+    printf 'herdr\n' >"$MODE_FILE"
+    rm -f "$TARGET_FILE"
+    echo "Handy mode: herdr auto (prefer working cursor agent)"
+    ;;
+  herdr-pin)
+    printf 'herdr\n' >"$MODE_FILE"
+    [[ -x "$HERDR_BIN" ]] || { echo "herdr not found" >&2; exit 1; }
+    choice="$(
+      "$HERDR_BIN" agent list | CURRENT="$current_pin" python3 -c '
+import json, os, sys
+data = json.load(sys.stdin)
+agents = data.get("result", {}).get("agents") or []
+current = os.environ.get("CURRENT") or ""
+for a in agents:
+    pane = a.get("pane_id") or "?"
+    mark = "*" if pane == current else " "
+    title = a.get("terminal_title_stripped") or ""
+    status = a.get("agent_status") or "?"
+    agent = a.get("agent") or "?"
+    print("\t".join([f"{mark} {pane}", agent, status, title]))
+' | fzf --prompt='Pin Herdr pane > ' --height=40% --reverse --border \
+        --header='Enter = pin this pane for Handy'
+    )" || true
+    [[ -n "${choice:-}" ]] || { echo "cancelled"; exit 1; }
+    pane="$(printf '%s\n' "$choice" | awk -F'\t' '{gsub(/^[* ] /, "", $1); print $1}')"
+    printf '%s\n' "$pane" >"$TARGET_FILE"
+    echo "Handy mode: herdr pin → $pane"
+    ;;
+  *)
+    echo "unknown choice" >&2
+    exit 1
+    ;;
+esac
